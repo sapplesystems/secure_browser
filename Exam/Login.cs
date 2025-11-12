@@ -154,7 +154,14 @@ namespace Exam
             // ===== Login Logic =====
             Action doLogin = () =>
             {
-                if (txtUser.Text == "Admin" && txtPass.Text == "Admin")
+                if (txtUser.Text.ToLower() == "admin" && txtPass.Text == "Admin123")
+                {
+                    this.Hide();
+                    Exam exam = new Exam();
+                    exam.Show();
+                    KillDistractionApps();
+                }
+                else if(txtUser.Text.ToLower() == "demo" && txtPass.Text == "Demo123")
                 {
                     this.Hide();
                     Exam exam = new Exam();
