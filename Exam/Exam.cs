@@ -1,8 +1,15 @@
-﻿using NAudio.CoreAudioApi;
+﻿using Accord.Vision.Detection;
+using AForge.Video;
+using AForge.Video.DirectShow;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
+using NAudio.CoreAudioApi;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using OpenCvSharp.Dnn;
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -15,9 +22,9 @@ using System.ServiceProcess;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Microsoft.Web.WebView2.Core;
-using System.Configuration;
-using Microsoft.Web.WebView2.WinForms;
+using OpenCvSharp;
+using OpenCvSharp.Dnn;
+using OpenCvSharp.Extensions;
 
 namespace Exam
 {
@@ -101,7 +108,7 @@ namespace Exam
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(50, 50, 50),
                 FlatStyle = FlatStyle.Flat,
-                Size = new Size(40, 30)
+                Size = new System.Drawing.Size(40, 30)
             };
             btnClose.FlatAppearance.BorderSize = 0;
             btnClose.Click += (s, e) => this.Close();
@@ -113,7 +120,7 @@ namespace Exam
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(50, 50, 50),
                 FlatStyle = FlatStyle.Flat,
-                Size = new Size(40, 30)
+                Size = new System.Drawing.Size(40, 30)
             };
             btnMaximize.FlatAppearance.BorderSize = 0;
             btnMaximize.Click += (s, e) => ToggleMaximize();
@@ -174,8 +181,8 @@ namespace Exam
                 return; // prevent early call before controls are ready
 
             int margin = 5;
-            btnClose.Location = new Point(ClientSize.Width - btnClose.Width - margin, margin);
-            btnMaximize.Location = new Point(ClientSize.Width - btnClose.Width - btnMaximize.Width - margin * 2, margin);
+            btnClose.Location = new System.Drawing.Point(ClientSize.Width - btnClose.Width - margin, margin);
+            btnMaximize.Location = new System.Drawing.Point(ClientSize.Width - btnClose.Width - btnMaximize.Width - margin * 2, margin);
         }
 
         private void ToggleMaximize()
@@ -327,13 +334,13 @@ namespace Exam
         private LowLevelKeyboardProc objKeyboardProcess;
         private LowLevelMouseClickProc objMouseProcess;
 
-        private IntPtr captureKey(int nCode, IntPtr wp, IntPtr lp)
+        private IntPtr captureKey(int nCode, IntPtr wParam, IntPtr lParam)
         {
             if (nCode >= 0)
             {
-                var objKeyInfo = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lp, typeof(KBDLLHOOKSTRUCT));
-
+                var objKeyInfo = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
                 Keys key = objKeyInfo.key;
+
                 bool ctrl = (ModifierKeys & Keys.Control) == Keys.Control;
                 bool alt = (ModifierKeys & Keys.Alt) == Keys.Alt;
                 bool shift = (ModifierKeys & Keys.Shift) == Keys.Shift;
@@ -387,7 +394,7 @@ namespace Exam
                     return (IntPtr)1;
             }
 
-            return CallNextHookEx(ptrHook, nCode, wp, lp);
+            return CallNextHookEx(ptrHook, nCode, wParam, lParam);
         }
 
         private IntPtr captureMouse(int nCode, IntPtr wp, IntPtr lp)
@@ -450,56 +457,45 @@ namespace Exam
         {
             try
             {
-                var deviceEnumerator = new MMDeviceEnumerator();
-                var defaultDevice = deviceEnumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-                int currentProcessId = Process.GetCurrentProcess().Id;
+                if (deviceEnumerator == null) deviceEnumerator = new MMDeviceEnumerator();
+                defaultDevice = deviceEnumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+                wasInitiallyMuted = defaultDevice.AudioEndpointVolume.Mute;
 
-                // Step 1: Check system mute state
-                bool wasSystemMuted = defaultDevice.AudioEndpointVolume.Mute;
-
-                if (wasSystemMuted)
+                if (wasInitiallyMuted)
                 {
-                    // Unmute and set system volume to 100%
                     defaultDevice.AudioEndpointVolume.Mute = false;
                     defaultDevice.AudioEndpointVolume.MasterVolumeLevelScalar = 1.0f;
                 }
 
-                // Step 2: Manage all audio sessions
                 var sessionManager = defaultDevice.AudioSessionManager;
                 var sessions = sessionManager.Sessions;
+                int currentProcessId = Process.GetCurrentProcess().Id;
 
                 for (int i = 0; i < sessions.Count; i++)
                 {
                     var session = sessions[i];
                     int sessionProcessId = 0;
-
                     try
                     {
-                        sessionProcessId = (int)session.GetProcessID;
+                        // AudioSessionControl has GetProcessID? Different versions vary.
+                        // Try this safe approach:
+                        try { sessionProcessId = (int)session.GetProcessID; }
+                        catch { /* fallback or skip */ }
                     }
-                    catch
-                    {
-                        // Skip system sessions that don't expose process IDs
-                        continue;
-                    }
+                    catch { }
 
                     if (sessionProcessId != currentProcessId)
                     {
-                        // Mute all other application sessions
                         session.SimpleAudioVolume.Mute = true;
                     }
                     else
                     {
-                        // Keep this app unmuted and set to full volume
                         session.SimpleAudioVolume.Mute = false;
                         session.SimpleAudioVolume.Volume = 1.0f;
                     }
                 }
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Failed to control audio sessions: " + ex.Message);
-            }
+            catch (Exception ex) { Debug.WriteLine("MuteSystemVolume failed: " + ex.Message); }
         }
 
         //private void MuteMicrophones()
@@ -609,6 +605,24 @@ namespace Exam
         }
         private Timer focusTimer;
 
+        private void InitFaceDetector()
+        {
+            if (_faceNet != null) return;
+            string basePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Content");
+            string protoPath = Path.Combine(basePath, "deploy.prototxt");
+            string modelPath = Path.Combine(basePath, "res10_300x300_ssd_iter_140000_fp16.caffemodel");
+
+            if (!File.Exists(protoPath) || !File.Exists(modelPath))
+            {
+                Debug.WriteLine("Face model files missing: " + protoPath + " / " + modelPath);
+                return;
+            }
+
+            _faceNet = CvDnn.ReadNetFromCaffe(protoPath, modelPath);
+        }
+
+        private const int WH_KEYBOARD_LL = 13;
+        private const int WH_MOUSE_LL = 14;
         private async void Exam_Load(object sender, EventArgs e)
         {
             try
@@ -654,18 +668,6 @@ namespace Exam
             FormBorderStyle = FormBorderStyle.None;
             WindowState = FormWindowState.Maximized;
             TopMost = true;
-
-            //focusTimer = new Timer();
-            //focusTimer.Interval = 10000; // every second
-            //focusTimer.Tick += (u, ev) =>
-            //{
-            //    if (!this.TopMost)
-            //        this.TopMost = true;
-
-            //    this.Activate();
-            //    this.BringToFront();
-            //};
-            //focusTimer.Start();
 
             string userDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SappleSystems", "SecureBrowser", "WebView2Data");
 
@@ -759,10 +761,6 @@ namespace Exam
             string sapUrl = ConfigurationManager.AppSettings["SapWebUrl"];
             webView21.Source = new Uri(sapUrl);
 
-
-            //webView21.Source = new Uri("https://hcm-in10-preview.hr.cloud.sap/sf/home?bplte_company=ntpclimiteT1");
-            //webView21.Source = new Uri("https://google.com");
-
             ProcessModule objCurrentModule = Process.GetCurrentProcess().MainModule;
             objKeyboardProcess = new LowLevelKeyboardProc(captureKey);
             ptrHook = SetWindowsHookEx(13, objKeyboardProcess, GetModuleHandle(objCurrentModule.ModuleName), 0);
@@ -775,11 +773,11 @@ namespace Exam
             //MuteMicrophones();
             StartTopMostEnforcement();
 
-            updateTimer = new Timer();
-            updateTimer.Interval = 60000; // 1 minute
-            updateTimer.Tick += UpdateLabelHash;
-            updateTimer.Start();
-            UpdateLabelHash(null, null);
+            //updateTimer = new Timer();
+            //updateTimer.Interval = 60000; // 1 minute
+            //updateTimer.Tick += UpdateLabelHash;
+            //updateTimer.Start();
+            //UpdateLabelHash(null, null);
         }
 
         private async void CoreWebView2_NavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
@@ -842,16 +840,22 @@ namespace Exam
                         {
                             // label2.Text = "✅ LMS Active";
                             _lms = true;
+                            InitFaceDetector();
+                            StartCamera();
+                            StartFaceUiTimer();
+                            ScreenShotTimmer();
                         }
                         else if (ok)
                         {
                             //  label2.Text = "🟦 LMS session active (not on Learning)";
                             _lms = false;
+                            StopCamera();
                         }
                         else
                         {
                             // label2.Text = "❌ LMS Logged Out";
                             _lms = false;
+                            StopCamera();
                         }
                         label2.Left = 10;
                         label2.Top = this.ClientSize.Height - label2.Height - 10;
@@ -865,16 +869,22 @@ namespace Exam
                     {
                         //label2.Text = "✅ LMS Active";
                         _lms = true;
+                        InitFaceDetector();
+                        StartCamera();
+                        StartFaceUiTimer();
+                        ScreenShotTimmer();
                     }
                     else if (first)
                     {
                         // label2.Text = "🟦 LMS session active (not on Learning)";
                         _lms = false;
+                        StopCamera();
                     }
                     else
                     {
                         //  label2.Text = "❌ LMS Logged Out";
                         _lms = false;
+                        StopCamera();
                     }
                     label2.Left = 10;
                     label2.Top = this.ClientSize.Height - label2.Height - 10;
@@ -890,11 +900,16 @@ namespace Exam
                         {
                             //label2.Text = "✅ LMS Active";
                             _lms = true;
+                            InitFaceDetector();
+                            StartCamera();
+                            StartFaceUiTimer();
+                            ScreenShotTimmer();
                         }
                         else if (okNow)
                         {
                             //label2.Text = "🟦 LMS session active (not on Learning)";
                             _lms = false;
+                            StopCamera();
                         }
                         else
                         {
@@ -904,11 +919,12 @@ namespace Exam
                         label2.Left = 10;
                         label2.Top = this.ClientSize.Height - label2.Height - 10;
                         label2.BringToFront();
+                        StopCamera();
                     }
                 }
 
                 // Keep hash updated after navigation / login state changes
-                UpdateLabelHash(null, null);
+                // UpdateLabelHash(null, null);
             }
             catch (Exception ex)
             {
@@ -954,39 +970,168 @@ namespace Exam
                 return false;
             }
         }
+        private FilterInfoCollection _videoDevices;
+        private VideoCaptureDevice _videoSource;
+        private HaarObjectDetector _faceDetector;
+        private volatile bool _faceDetected = false;
+        private Net _faceNet;
+        private readonly object _videoLock = new object();
+        private bool _videoStarted = false;
 
-        private void UpdateLabelHash(object sender, EventArgs e)
+        // Camera / face detection
+        private DateTime _lastFrameProcessed = DateTime.MinValue;
+        private readonly object _frameLock = new object();
+
+        // Timers
+        private Timer _faceUiTimer;
+        private Timer _ScreenShotTimer;
+
+        private void StartCamera()
+        {
+            if (_videoSource != null && _videoSource.IsRunning)
+                return;
+
+            _videoDevices = new FilterInfoCollection(FilterCategory.VideoInputDevice);
+            if (_videoDevices.Count == 0)
+            {
+                label1.Text = "No webcam detected";
+                label1.Left = (this.ClientSize.Width - label1.Width) / 2;
+                return;
+            }
+
+            _videoSource = new VideoCaptureDevice(_videoDevices[0].MonikerString);
+            _videoSource.NewFrame += VideoSource_NewFrame;
+            _videoSource.Start();
+        }
+
+        private void StopCamera()
         {
             try
             {
-                Clipboard.SetText(" ");
-                string mac = GetMacAddress();
-                string ip = GetLocalIPAddress();
-                string timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmm");
-
-                string shortCode = "Please Login";
-                label1.Text = "";
-                if (!string.IsNullOrEmpty(_userId) && _lms)
+                if (_videoSource != null)
                 {
-                    string combined = string.Format("{0}-{1}-{2}-{3}", mac, ip, timestamp, _userId);
-                    string full = GetSha256Hash(combined);
-                    //shortCode = full.Substring(0, 12);
-                    shortCode = full;
+                    _videoSource.NewFrame -= VideoSource_NewFrame;
 
-                    string minuteCode = MinuteCode.GetCurrentDeviceMinuteCode();
-                    label1.Text = "Code: " + minuteCode;
-                    Clipboard.SetText(minuteCode);
+                    if (_videoSource.IsRunning)
+                    {
+                        _videoSource.SignalToStop();
+                        _videoSource.WaitForStop();
+                    }
 
-                    CaptureWebViewScreenshotAsync(mac, ip);
+                    _videoSource = null;
                 }
+            }
+            catch { }
+        }
 
+        private void StartFaceUiTimer()
+        {
+            _faceUiTimer = new Timer();
+            _faceUiTimer.Interval = 1000; // 1 second
+            _faceUiTimer.Tick += FaceUiTimer_Tick;
+            _faceUiTimer.Start();
+        }
 
+        private void ScreenShotTimmer()
+        {
+            _ScreenShotTimer = new Timer();
+            _ScreenShotTimer.Interval = 10000; // 10 second
+            _ScreenShotTimer.Tick += CaptureScreen_Tick;
+            _ScreenShotTimer.Start();
+        }
+
+        private void FaceUiTimer_Tick(object sender, EventArgs e)
+        {
+            SafeSetClipboardTextOnce("");
+            if (string.IsNullOrEmpty(_userId) || !_lms)
+            {
+                label1.Text = "Please Login";
                 label1.Left = (this.ClientSize.Width - label1.Width) / 2;
+                return;
+            }
+
+            bool detected;
+            lock (_frameLock)
+            {
+                detected = _faceDetected;
+            }
+            if (!detected)
+            {
+                label1.Text = "No Person Found.";
+                label1.Left = (this.ClientSize.Width - label1.Width) / 2;
+                SafeSetClipboardTextOnce("");
+                return;
+            }
+
+            string minuteCode = MinuteCode.GetCurrentDeviceMinuteCode();
+            label1.Text = "Code: " + minuteCode;
+            SafeSetClipboardTextOnce(minuteCode);
+            label1.Left = (this.ClientSize.Width - label1.Width) / 2;
+        }
+        private string _lastClipboardValue = null;
+
+        private void SafeSetClipboardTextOnce(string text)
+        {
+            if (text == _lastClipboardValue)
+                return;
+
+            try
+            {
+                Clipboard.SetText(text);
+                _lastClipboardValue = text;
+            }
+            catch { }
+        }
+        private void VideoSource_NewFrame(object sender, NewFrameEventArgs eventArgs)
+        {
+            // throttle to 1 frame per second
+            if ((DateTime.UtcNow - _lastFrameProcessed).TotalSeconds < 1)
+                return;
+
+            _lastFrameProcessed = DateTime.UtcNow;
+
+            try
+            {
+                using (Bitmap frame = (Bitmap)eventArgs.Frame.Clone())
+                {
+                    bool detected = DetectFace(frame);
+
+                    lock (_frameLock)
+                    {
+                        _faceDetected = detected;
+                    }
+                }
             }
             catch
             {
-                label1.Text = "Code: N/A";
+                _faceDetected = false;
             }
+        }
+
+        private bool DetectFace(Bitmap bitmap)
+        {
+            using (Mat img = BitmapConverter.ToMat(bitmap))
+            using (Mat blob = CvDnn.BlobFromImage(
+                img,
+                1.0,
+                new OpenCvSharp.Size(300, 300),
+                new Scalar(104, 117, 123),
+                false,
+                false))
+            {
+                _faceNet.SetInput(blob);
+
+                using (Mat output = _faceNet.Forward())
+                {
+                    for (int i = 0; i < output.Size(2); i++)
+                    {
+                        float confidence = output.At<float>(0, 0, i, 2);
+                        if (confidence > 0.8f)
+                            return true;
+                    }
+                }
+            }
+            return false;
         }
 
         private static string GetMacAddress()
@@ -1024,10 +1169,10 @@ namespace Exam
             button1.Left = this.ClientSize.Width - button1.Width - 10;
 
             int maxWidth = this.ClientSize.Width / 2;
-            Size textSize = TextRenderer.MeasureText(
+            System.Drawing.Size textSize = TextRenderer.MeasureText(
                 label2.Text,
                 label2.Font,
-                new Size(maxWidth, int.MaxValue),
+                new System.Drawing.Size(maxWidth, int.MaxValue),
                 TextFormatFlags.WordBreak
             );
             label2.Size = textSize;
@@ -1072,42 +1217,6 @@ namespace Exam
             }
         }
 
-        //private void OnFormClosing(object sender, FormClosingEventArgs e)
-        //{
-        //    var result = MessageBox.Show(
-        //        "Are you sure you want to exit the program??",
-        //        "Exit",
-        //        MessageBoxButtons.OKCancel,
-        //        MessageBoxIcon.Question
-        //    );
-
-        //    if (result != DialogResult.OK)
-        //    {
-        //        e.Cancel = true; // User canceled exit
-        //        return;
-        //    }
-
-        //    try
-        //    {
-        //        //UnblockSecondaryMonitors(); // Safe monitor unlock
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        MessageBox.Show("UnblockSecondaryMonitors failed: " + ex.Message);
-        //    }
-
-        //    try
-        //    {
-        //        RestoreSystemVolume(); // Safe volume restore
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        MessageBox.Show("RestoreSystemVolume failed: " + ex.Message);
-        //    }
-
-        //    // Application.Exit() not needed; closing main form exits app
-        //}
-
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             UnblockSecondaryMonitors();
@@ -1118,11 +1227,41 @@ namespace Exam
             {
                 try { owned.Close(); owned.Dispose(); } catch { }
             }
+            // stop video
+            try
+            {
+                if (_videoSource != null)
+                {
+                    _videoSource.NewFrame -= VideoSource_NewFrame;
+                    if (_videoSource.IsRunning)
+                    {
+                        _videoSource.SignalToStop();
+                        _videoSource.WaitForStop();
+                    }
+                    _videoSource = null;
+                }
+            }
+            catch { }
+
+            try { if (_faceNet != null) { _faceNet.Dispose(); _faceNet = null; } } catch { }
+
+            try { if (ptrHook != IntPtr.Zero) { UnhookWindowsHookEx(ptrHook); ptrHook = IntPtr.Zero; } } catch { }
+            try { if (ptrMouseHook != IntPtr.Zero) { UnhookWindowsHookEx(ptrMouseHook); ptrMouseHook = IntPtr.Zero; } } catch { }
+
+            try { updateTimer?.Stop(); updateTimer?.Dispose(); } catch { }
+            try { _lmsTimer?.Stop(); _lmsTimer?.Dispose(); } catch { }
+
             base.OnFormClosing(e);
         }
 
         private Timer enforceTopMostTimer = new Timer();
 
+        private void CaptureScreen_Tick(object sender, EventArgs e)
+        {
+            string mac = GetMacAddress();
+            string ip = GetLocalIPAddress();
+            CaptureWebViewScreenshotAsync(mac, ip);
+        }
         private void StartTopMostEnforcement()
         {
             enforceTopMostTimer.Interval = 500;

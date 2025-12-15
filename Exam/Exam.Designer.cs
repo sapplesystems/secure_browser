@@ -84,9 +84,10 @@ namespace Exam
             this.label1.Name = "label1";
             this.label1.Size = new System.Drawing.Size(82, 25);
             this.label1.TabIndex = 2;
-            this.label1.Text = "Exam UI";
+            this.label1.Text = "";
             this.label1.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
             this.label1.Anchor = System.Windows.Forms.AnchorStyles.Top;
+            this.label1.Left = (this.ClientSize.Width - label1.Width) / 2;
             // 
             // label2
             // 
