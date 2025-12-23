@@ -154,19 +154,23 @@ namespace Exam
             // ===== Login Logic =====
             Action doLogin = () =>
             {
+
+                //todo
+                //
+                // call the loginapi and pass the userid & password & check if the credentials are valid
                 if (txtUser.Text.ToLower() == "admin" && txtPass.Text == "Admin123")
                 {
                     this.Hide();
                     Exam exam = new Exam();
                     exam.Show();
-                    KillDistractionApps();
+                    Globals.KillDistractionApps();
                 }
                 else if(txtUser.Text.ToLower() == "demo" && txtPass.Text == "Demo123")
                 {
                     this.Hide();
                     Exam exam = new Exam();
                     exam.Show();
-                    KillDistractionApps();
+                    Globals.KillDistractionApps();
                 }
                 else if (txtUser.Text == "Admin" && txtPass.Text == "Decrypt")
                 {
@@ -253,46 +257,46 @@ namespace Exam
             layout();
             this.Resize += (s, ev) => layout();
         }
-        private void KillDistractionApps()
-        {
-            // Extended list of distraction / communication / dev tools
-            string[] apps =
-            {
-        // Chat / Communication
-        "whatsapp", "telegram", "discord", "skype", "teams", "slack", "zoom", "viber", "signal",
-        "line", "wechat", "messenger", "yourphone",
+    //    public void KillDistractionApps()
+    //    {
+    //        // Extended list of distraction / communication / dev tools
+    //        string[] apps =
+    //        {
+    //    // Chat / Communication
+    //    "whatsapp", "telegram", "discord", "skype", "teams", "slack", "zoom", "viber", "signal",
+    //    "line", "wechat", "messenger", "yourphone",
 
-        // Social media & browsers
-        "chrome", "firefox", "opera", "brave", "vivaldi",
+    //    // Social media & browsers
+    //    "chrome", "firefox", "opera", "brave", "vivaldi",
 
-        // Dev / API tools
-        "postman", "insomnia", "fiddler", "charles", "wireshark",
+    //    // Dev / API tools
+    //    "postman", "insomnia", "fiddler", "charles", "wireshark",
 
-        // File sharing / remote control
-        "anydesk", "teamviewer", "ultraviewer", "rdpclip",
+    //    // File sharing / remote control
+    //    "anydesk", "teamviewer", "ultraviewer", "rdpclip",
 
-        // Media / entertainment
-        "spotify", "vlc", "netflix", "itunes", "music", "videos",
+    //    // Media / entertainment
+    //    "spotify", "vlc", "netflix", "itunes", "music", "videos",
 
-        // Miscellaneous distractions
-        "notion", "obsidian", "todoist", "evernote"
-    };
+    //    // Miscellaneous distractions
+    //    "notion", "obsidian", "todoist", "evernote"
+    //};
 
-            foreach (var p in Process.GetProcesses())
-            {
-                try
-                {
-                    if (apps.Any(a => p.ProcessName.ToLower().Contains(a)))
-                    {
-                        p.Kill();
-                    }
-                }
-                catch
-                {
-                    // Ignored intentionally (some system processes may not be killable)
-                }
-            }
-        }
+    //        foreach (var p in Process.GetProcesses())
+    //        {
+    //            try
+    //            {
+    //                if (apps.Any(a => p.ProcessName.ToLower().Contains(a)))
+    //                {
+    //                    p.Kill();
+    //                }
+    //            }
+    //            catch
+    //            {
+    //                // Ignored intentionally (some system processes may not be killable)
+    //            }
+    //        }
+    //    }
 
         private void button1_Click(object sender, EventArgs e)
         {

@@ -293,8 +293,7 @@ namespace Exam
 
         // --- LMS polling timer (cookie-based, passive; no navigation) ---
         private Timer _lmsTimer = new Timer();
-        //private readonly string _lmsProbeOrigin = "https://ntpclimite-stage.lms.hr.cloud.sap/";
-        private readonly string _lmsProbeOrigin = ConfigurationManager.AppSettings["LmsProbeOrigin"];
+        private readonly string _lmsProbeOrigin = Globals.default_open_url;
 
         private bool _isOnLmsPage = false;
 
@@ -605,8 +604,9 @@ namespace Exam
         }
         private Timer focusTimer;
 
-        private void InitFaceDetector()
+        private void InitFaceDetector(bool isEnabled)
         {
+            if (!isEnabled) return;
             if (_faceNet != null) return;
             string basePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Content");
             string protoPath = Path.Combine(basePath, "deploy.prototxt");
@@ -759,7 +759,7 @@ namespace Exam
 
             // end gate f
 
-            string sapUrl = ConfigurationManager.AppSettings["SapWebUrl"];
+            string sapUrl = Globals.sapple_lms_url;
             webView21.Source = new Uri(sapUrl);
 
             ProcessModule objCurrentModule = Process.GetCurrentProcess().MainModule;
@@ -843,10 +843,10 @@ namespace Exam
                             _lms = true;
                             if (!_videoStarted)
                             {
-                                InitFaceDetector();
-                                StartCamera();
-                                StartFaceUiTimer();
-                                ScreenShotTimmer();
+                                InitFaceDetector(Globals.detect_person);
+                                StartCamera(Globals.detect_camera);
+                                StartFaceUiTimer(Globals.detect_camera);
+                                ScreenShotTimmer(Globals.screenshot_needed);
                             }
                         }
                         else if (ok)
@@ -881,10 +881,10 @@ namespace Exam
                         _lms = true;
                         if (!_videoStarted)
                         {
-                            InitFaceDetector();
-                            StartCamera();
-                            StartFaceUiTimer();
-                            ScreenShotTimmer();
+                            InitFaceDetector(Globals.detect_person);
+                            StartCamera(Globals.detect_camera);
+                            StartFaceUiTimer(Globals.detect_camera);
+                            ScreenShotTimmer(Globals.screenshot_needed);
                         }
                     }
                     else if (first)
@@ -921,10 +921,10 @@ namespace Exam
                             _lms = true;
                             if (!_videoStarted)
                             {
-                                InitFaceDetector();
-                                StartCamera();
-                                StartFaceUiTimer();
-                                ScreenShotTimmer();
+                                InitFaceDetector(Globals.detect_person);
+                                StartCamera(Globals.detect_camera);
+                                StartFaceUiTimer(Globals.detect_camera);
+                                ScreenShotTimmer(Globals.screenshot_needed);
                             }
                         }
                         else if (okNow)
@@ -1012,8 +1012,11 @@ namespace Exam
         private Timer _faceUiTimer;
         private Timer _ScreenShotTimer;
 
-        private void StartCamera()
+        private void StartCamera(bool isEnabled)
         {
+            if (!isEnabled)
+                return;
+
             if (_videoSource != null && _videoSource.IsRunning)
                 return;
 
@@ -1052,20 +1055,26 @@ namespace Exam
             catch { }
         }
 
-        private void StartFaceUiTimer()
+        private void StartFaceUiTimer(bool isEnabled)
         {
-            _faceUiTimer = new Timer();
-            _faceUiTimer.Interval = 1000; // 1 second
-            _faceUiTimer.Tick += FaceUiTimer_Tick;
-            _faceUiTimer.Start();
+            if (isEnabled)
+            {
+                _faceUiTimer = new Timer();
+                _faceUiTimer.Interval = 1000; // 1 second
+                _faceUiTimer.Tick += FaceUiTimer_Tick;
+                _faceUiTimer.Start();
+            }
         }
 
-        private void ScreenShotTimmer()
+        private void ScreenShotTimmer(bool isEnabled)
         {
-            _ScreenShotTimer = new Timer();
-            _ScreenShotTimer.Interval = 10000; // 10 second
-            _ScreenShotTimer.Tick += CaptureScreen_Tick;
-            _ScreenShotTimer.Start();
+            if (isEnabled)
+            {
+                _ScreenShotTimer = new Timer();
+                _ScreenShotTimer.Interval = 10000; // 10 second
+                _ScreenShotTimer.Tick += CaptureScreen_Tick;
+                _ScreenShotTimer.Start();
+            }
         }
 
         private void FaceUiTimer_Tick(object sender, EventArgs e)
@@ -1073,7 +1082,7 @@ namespace Exam
             SafeSetClipboardTextOnce(" ");
             if (string.IsNullOrEmpty(_userId) || !_lms)
             {
-                label1.Text = "Please Login";
+                label1.Text = " ";
                 label1.Left = (this.ClientSize.Width - label1.Width) / 2;
                 return;
             }
@@ -1085,7 +1094,7 @@ namespace Exam
             }
             if (detected != true)
             {
-                label1.Text = "No Person Detected.";
+                label1.Text = "Detecting Face..";
                 label1.Left = (this.ClientSize.Width - label1.Width) / 2;
                 SafeSetClipboardTextOnce(" ");
                 return;
@@ -1138,6 +1147,8 @@ namespace Exam
 
         private bool DetectFace(Bitmap bitmap)
         {
+            if(!Globals.detect_person) return true;
+
             using (Mat img = BitmapConverter.ToMat(bitmap))
             using (Mat blob = CvDnn.BlobFromImage(
                 img,
