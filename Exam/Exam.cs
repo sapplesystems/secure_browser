@@ -623,6 +623,7 @@ namespace Exam
 
         private const int WH_KEYBOARD_LL = 13;
         private const int WH_MOUSE_LL = 14;
+        private bool _videoStarted = false;
         private async void Exam_Load(object sender, EventArgs e)
         {
             try
@@ -840,22 +841,31 @@ namespace Exam
                         {
                             // label2.Text = "✅ LMS Active";
                             _lms = true;
-                            InitFaceDetector();
-                            StartCamera();
-                            StartFaceUiTimer();
-                            ScreenShotTimmer();
+                            if (!_videoStarted)
+                            {
+                                InitFaceDetector();
+                                StartCamera();
+                                StartFaceUiTimer();
+                                ScreenShotTimmer();
+                            }
                         }
                         else if (ok)
                         {
                             //  label2.Text = "🟦 LMS session active (not on Learning)";
                             _lms = false;
-                            StopCamera();
+                            if (_videoStarted)
+                            {
+                                StopCamera();
+                            }
                         }
                         else
                         {
                             // label2.Text = "❌ LMS Logged Out";
                             _lms = false;
-                            StopCamera();
+                            if (_videoStarted)
+                            {
+                                StopCamera();
+                            }
                         }
                         label2.Left = 10;
                         label2.Top = this.ClientSize.Height - label2.Height - 10;
@@ -869,22 +879,31 @@ namespace Exam
                     {
                         //label2.Text = "✅ LMS Active";
                         _lms = true;
-                        InitFaceDetector();
-                        StartCamera();
-                        StartFaceUiTimer();
-                        ScreenShotTimmer();
+                        if (!_videoStarted)
+                        {
+                            InitFaceDetector();
+                            StartCamera();
+                            StartFaceUiTimer();
+                            ScreenShotTimmer();
+                        }
                     }
                     else if (first)
                     {
                         // label2.Text = "🟦 LMS session active (not on Learning)";
                         _lms = false;
-                        StopCamera();
+                        if (_videoStarted)
+                        {
+                            StopCamera();
+                        }
                     }
                     else
                     {
                         //  label2.Text = "❌ LMS Logged Out";
                         _lms = false;
-                        StopCamera();
+                        if (_videoStarted)
+                        {
+                            StopCamera();
+                        }
                     }
                     label2.Left = 10;
                     label2.Top = this.ClientSize.Height - label2.Height - 10;
@@ -900,16 +919,22 @@ namespace Exam
                         {
                             //label2.Text = "✅ LMS Active";
                             _lms = true;
-                            InitFaceDetector();
-                            StartCamera();
-                            StartFaceUiTimer();
-                            ScreenShotTimmer();
+                            if (!_videoStarted)
+                            {
+                                InitFaceDetector();
+                                StartCamera();
+                                StartFaceUiTimer();
+                                ScreenShotTimmer();
+                            }
                         }
                         else if (okNow)
                         {
                             //label2.Text = "🟦 LMS session active (not on Learning)";
                             _lms = false;
-                            StopCamera();
+                            if (_videoStarted)
+                            {
+                                StopCamera();
+                            }
                         }
                         else
                         {
@@ -919,7 +944,10 @@ namespace Exam
                         label2.Left = 10;
                         label2.Top = this.ClientSize.Height - label2.Height - 10;
                         label2.BringToFront();
-                        StopCamera();
+                        if (_videoStarted)
+                        {
+                            StopCamera();
+                        }
                     }
                 }
 
@@ -976,8 +1004,6 @@ namespace Exam
         private volatile bool _faceDetected = false;
         private Net _faceNet;
         private readonly object _videoLock = new object();
-        private bool _videoStarted = false;
-
         // Camera / face detection
         private DateTime _lastFrameProcessed = DateTime.MinValue;
         private readonly object _frameLock = new object();
@@ -1002,6 +1028,7 @@ namespace Exam
             _videoSource = new VideoCaptureDevice(_videoDevices[0].MonikerString);
             _videoSource.NewFrame += VideoSource_NewFrame;
             _videoSource.Start();
+            _videoStarted = true;
         }
 
         private void StopCamera()
@@ -1019,6 +1046,7 @@ namespace Exam
                     }
 
                     _videoSource = null;
+                    _videoStarted = false;
                 }
             }
             catch { }
@@ -1042,7 +1070,7 @@ namespace Exam
 
         private void FaceUiTimer_Tick(object sender, EventArgs e)
         {
-            SafeSetClipboardTextOnce("");
+            SafeSetClipboardTextOnce(" ");
             if (string.IsNullOrEmpty(_userId) || !_lms)
             {
                 label1.Text = "Please Login";
@@ -1050,16 +1078,16 @@ namespace Exam
                 return;
             }
 
-            bool detected;
+            bool detected = false;
             lock (_frameLock)
             {
                 detected = _faceDetected;
             }
-            if (!detected)
+            if (detected != true)
             {
-                label1.Text = "No Person Found.";
+                label1.Text = "No Person Detected.";
                 label1.Left = (this.ClientSize.Width - label1.Width) / 2;
-                SafeSetClipboardTextOnce("");
+                SafeSetClipboardTextOnce(" ");
                 return;
             }
 
