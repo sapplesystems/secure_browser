@@ -5,6 +5,12 @@ using System.Configuration;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -66,19 +72,91 @@ namespace Exam
         }
 
     }
+
+    public class AuthenticateResponse
+    {
+        public string LmsProbeOrigin { get; set; }
+        public bool licence_valid { get; set; }
+        public bool login_needed { get; set; }
+        public bool detect_camera { get; set; }
+        public bool detect_person { get; set; }
+        public bool screenshot_needed { get; set; }
+        public string default_login_api { get; set; }
+        public string msg { get; set; }
+        public string SapWebUrl { get; set; }
+    }
+
     internal static class Program
     {
         /// <summary>
         /// The main entry point for the application.
         /// </summary>
-        [STAThread]
-        //static void Main()
-        //{
-        //    Application.EnableVisualStyles();
-        //    Application.SetCompatibleTextRenderingDefault(false);
-        //    Application.Run(new Login());
-        //}
+    
+ 
+        public static string GetMacAddress()
+        {
+            foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (nic.OperationalStatus == OperationalStatus.Up)
+                {
+                    return nic.GetPhysicalAddress().ToString();
+                }
+            }
+            return string.Empty;
+        }
 
+        public static string GetLocalIpAddress()
+        {
+            foreach (var ip in Dns.GetHostEntry(Dns.GetHostName()).AddressList)
+            {
+                if (ip.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    return ip.ToString();
+                }
+            }
+            return string.Empty;
+        }
+
+        public static string GetHostName()
+        {
+            return Dns.GetHostName();
+        }
+
+        public static async Task<AuthenticateResponse> AuthenticateAsync()
+        {
+            var apiUrl = Globals.sapple_licence_url;
+
+            var requestData = new
+            {
+                mac_address = GetMacAddress(),
+                ip_address = GetLocalIpAddress(),
+                hostname = GetHostName()
+            };
+
+            using (HttpClient client = new HttpClient())
+            {
+                var json = JsonSerializer.Serialize(requestData);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                try
+                {
+                    HttpResponseMessage response = await client.PostAsync(apiUrl, content);
+                    response.EnsureSuccessStatusCode();
+
+                    string responseJson = await response.Content.ReadAsStringAsync();
+
+                    var result = JsonSerializer.Deserialize<AuthenticateResponse>(
+                        responseJson,
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                    );
+
+                    return result;
+                }
+                catch (Exception ex) { }
+                return new AuthenticateResponse();
+            }
+        }
+        [STAThread]
         static void Main()
         {
             try
@@ -102,7 +180,23 @@ namespace Exam
             //
             //
 
-            if(!Globals.licence_valid)
+            AuthenticateResponse response = AuthenticateAsync().GetAwaiter().GetResult();
+            if (response.LmsProbeOrigin != null)
+            {
+                Globals._msg = string.IsNullOrEmpty(response.msg) ? Globals._msg : response.msg;
+                Globals.licence_valid = response.licence_valid;
+                Globals.login_needed = response.login_needed;
+                Globals.detect_camera = response.detect_camera;
+                Globals.detect_person = response.detect_person;
+                Globals.screenshot_needed = response.screenshot_needed;
+
+
+                Globals.default_open_url = string.IsNullOrEmpty(response.LmsProbeOrigin) ? Globals.default_open_url : response.LmsProbeOrigin;
+                Globals.default_login_url = string.IsNullOrEmpty(response.default_login_api) ? Globals.default_login_url : response.default_login_api;
+                Globals.sapple_lms_url = string.IsNullOrEmpty(response.SapWebUrl) ? Globals.sapple_lms_url : response.SapWebUrl;
+
+            }
+            if (!Globals.licence_valid)
             {
                 MessageBox.Show("ℹ️ Licence Expired or Seat Limit exceeded, contact Admin.\n"+Globals._msg);
                 return;

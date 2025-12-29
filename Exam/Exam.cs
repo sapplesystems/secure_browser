@@ -414,27 +414,27 @@ namespace Exam
 
         private void BlockSecondaryMonitors()
         {
-            foreach (var screen in Screen.AllScreens)
-            {
-                if (!screen.Primary)
-                {
-                    var overlay = new Form
-                    {
-                        FormBorderStyle = FormBorderStyle.None,
-                        StartPosition = FormStartPosition.Manual,
-                        BackColor = Color.Black,
-                        WindowState = FormWindowState.Normal,
-                        TopMost = true,
-                        Bounds = screen.Bounds,
-                        ShowInTaskbar = false
-                    };
-                    overlay.MouseDown += delegate { };
-                    overlay.KeyDown += delegate (object s, KeyEventArgs e) { e.SuppressKeyPress = true; };
-                    overlay.Show();
-                    overlay.BringToFront();
-                    secondaryOverlays.Add(overlay);
-                }
-            }
+            //foreach (var screen in Screen.AllScreens)
+            //{
+            //    if (!screen.Primary)
+            //    {
+            //        var overlay = new Form
+            //        {
+            //            FormBorderStyle = FormBorderStyle.None,
+            //            StartPosition = FormStartPosition.Manual,
+            //            BackColor = Color.Black,
+            //            WindowState = FormWindowState.Normal,
+            //            TopMost = true,
+            //            Bounds = screen.Bounds,
+            //            ShowInTaskbar = false
+            //        };
+            //        overlay.MouseDown += delegate { };
+            //        overlay.KeyDown += delegate (object s, KeyEventArgs e) { e.SuppressKeyPress = true; };
+            //        overlay.Show();
+            //        overlay.BringToFront();
+            //        secondaryOverlays.Add(overlay);
+            //    }
+            //}
         }
 
         private void UnblockSecondaryMonitors()

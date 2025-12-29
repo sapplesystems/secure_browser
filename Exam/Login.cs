@@ -9,9 +9,11 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -19,11 +21,11 @@ namespace Exam
 {
     public partial class Login : Form
     {
-
         public Login()
         {
             InitializeComponent();
         }
+
         private void Login_Load_1(object sender, EventArgs e)
         {
             this.Controls.Clear();
@@ -152,53 +154,119 @@ namespace Exam
             centerPanel.Controls.Add(btnLogin);
 
             // ===== Login Logic =====
-            Action doLogin = () =>
+            Func<Task> doLogin = async () =>
             {
+                string userId = txtUser.Text.Trim();
+                string password = txtPass.Text.Trim();
 
-                //todo
-                //
-                // call the loginapi and pass the userid & password & check if the credentials are valid
-                if (txtUser.Text.ToLower() == "admin" && txtPass.Text == "Admin123")
+                bool apiReachable = false;
+                //try
+                //{
+                //    using (HttpClient client = new HttpClient())
+                //    {
+                //        client.Timeout = TimeSpan.FromSeconds(3);
+                //        var response = await client.GetAsync(Globals.default_login_url);
+                //        apiReachable = response.IsSuccessStatusCode;
+                //    }
+                //}
+                //catch
+                //{
+                //    apiReachable = false;
+                //}
+
+                if (apiReachable)
                 {
-                    this.Hide();
-                    Exam exam = new Exam();
-                    exam.Show();
-                    Globals.KillDistractionApps();
-                }
-                else if(txtUser.Text.ToLower() == "demo" && txtPass.Text == "Demo123")
-                {
-                    this.Hide();
-                    Exam exam = new Exam();
-                    exam.Show();
-                    Globals.KillDistractionApps();
-                }
-                else if (txtUser.Text == "Admin" && txtPass.Text == "Decrypt")
-                {
-                    this.Hide();
-                    DecryptedCodeForm decryptedCodeForm = new DecryptedCodeForm();
-                    decryptedCodeForm.Show();
+                    try
+                    {
+                       
+
+                        var requestData = new
+                        {
+                            user_id = userId,
+                            password = password
+
+                        };
+                        using (HttpClient client = new HttpClient())
+                        {
+                            var json = JsonSerializer.Serialize(requestData);
+                            var content = new StringContent(json, Encoding.UTF8, "application/json");
+                        
+                           
+                            var response = await client.PostAsync(Globals.default_login_url, content);
+                            string result = await response.Content.ReadAsStringAsync();
+
+                            if (response.IsSuccessStatusCode)
+                            {
+                                var _json = JsonDocument.Parse(result).RootElement;
+                                if (_json.GetProperty("success").GetBoolean())
+                                {
+                                    this.Hide();
+                                    Exam exam = new Exam();
+                                    exam.Show();
+                                    Globals.KillDistractionApps();
+                                    return;
+                                }
+                                else
+                                {
+                                    MessageBox.Show("Login failed: " + _json.GetProperty("message").GetString(), "Login Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                    return;
+                                }
+                            }
+                            else
+                            {
+                                var _json = JsonDocument.Parse(result).RootElement;
+                                MessageBox.Show("Error: " + _json.GetProperty("messages").GetProperty("error").GetString(), "Login Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                return;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show("API Error: " + ex.Message, "Login Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
                 }
                 else
                 {
-                    MessageBox.Show("Invalid Username or Password!", "Login Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    // Hardcoded credentials
+                    if ((userId.ToLower() == "admin" && password == "Admin123") ||
+                        (userId.ToLower() == "demo" && password == "Demo123"))
+                    {
+                        this.Hide();
+                        Exam exam = new Exam();
+                        exam.Show();
+                        Globals.KillDistractionApps();
+                        return;
+                    }
+                    else if (userId == "Admin" && password == "Decrypt")
+                    {
+                        this.Hide();
+                        DecryptedCodeForm decryptedCodeForm = new DecryptedCodeForm();
+                        decryptedCodeForm.Show();
+                        return;
+                    }
+                    else
+                    {
+                        MessageBox.Show("Invalid Username or Password!", "Login Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
                 }
             };
 
-            btnLogin.Click += (s, ev) => doLogin();
+            // ===== Event Handlers =====
+            btnLogin.Click += async (s, ev) => await doLogin();
 
-            // Handle Enter key for both username and password textboxes
             KeyEventHandler handleEnter = (s, ev) =>
             {
                 if (ev.KeyCode == Keys.Enter)
                 {
-                    ev.SuppressKeyPress = true; // Prevent system beep
-                    doLogin();
+                    ev.SuppressKeyPress = true;
+                    _ = doLogin();
                 }
             };
 
             txtUser.KeyDown += handleEnter;
             txtPass.KeyDown += handleEnter;
-
 
             // ===== Instructions =====
             Panel instructionPanel = new Panel
@@ -256,91 +324,6 @@ namespace Exam
 
             layout();
             this.Resize += (s, ev) => layout();
-        }
-    //    public void KillDistractionApps()
-    //    {
-    //        // Extended list of distraction / communication / dev tools
-    //        string[] apps =
-    //        {
-    //    // Chat / Communication
-    //    "whatsapp", "telegram", "discord", "skype", "teams", "slack", "zoom", "viber", "signal",
-    //    "line", "wechat", "messenger", "yourphone",
-
-    //    // Social media & browsers
-    //    "chrome", "firefox", "opera", "brave", "vivaldi",
-
-    //    // Dev / API tools
-    //    "postman", "insomnia", "fiddler", "charles", "wireshark",
-
-    //    // File sharing / remote control
-    //    "anydesk", "teamviewer", "ultraviewer", "rdpclip",
-
-    //    // Media / entertainment
-    //    "spotify", "vlc", "netflix", "itunes", "music", "videos",
-
-    //    // Miscellaneous distractions
-    //    "notion", "obsidian", "todoist", "evernote"
-    //};
-
-    //        foreach (var p in Process.GetProcesses())
-    //        {
-    //            try
-    //            {
-    //                if (apps.Any(a => p.ProcessName.ToLower().Contains(a)))
-    //                {
-    //                    p.Kill();
-    //                }
-    //            }
-    //            catch
-    //            {
-    //                // Ignored intentionally (some system processes may not be killable)
-    //            }
-    //        }
-    //    }
-
-        private void button1_Click(object sender, EventArgs e)
-        {
-            if (textBox1.Text == "Admin" && textBox2.Text == "Admin")
-            {
-                this.Hide();
-                Exam exam = new Exam();
-                exam.BringToFront();
-                exam.Show();
-            }
-        }
-
-        private void textBox1_KeyPress(object sender, KeyPressEventArgs e)
-        {
-            if (e.KeyChar == (char)Keys.Enter)
-            {
-                if (!string.IsNullOrEmpty(textBox1.Text) && !string.IsNullOrEmpty(textBox2.Text))
-                {
-                    if (textBox1.Text == "Admin" && textBox2.Text == "Admin")
-                    {
-                        this.Hide();
-                        Exam exam = new Exam();
-                        exam.BringToFront();
-                        exam.Show();
-                    }
-                }
-            }
-        }
-
-        private void textBox2_KeyPress(object sender, KeyPressEventArgs e)
-        {
-            if (e.KeyChar == (char)Keys.Enter)
-            {
-                if (!string.IsNullOrEmpty(textBox1.Text) && !string.IsNullOrEmpty(textBox2.Text))
-                {
-                    if (textBox1.Text == "Admin" && textBox2.Text == "Admin")
-                    {
-                        this.Hide();
-                        Exam exam = new Exam();
-                        exam.BringToFront();
-                        exam.Show();
-                    }
-                }
-            }
         }
     }
 }
